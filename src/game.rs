@@ -1,17 +1,19 @@
-use rand::Rng;
+pub const WIDTH: usize = 100;
+pub const HEIGHT: usize = 100;
+pub const CELL_SIZE: usize = 5;
 
-pub const WIDTH: usize = 300;
-pub const HEIGHT: usize = 300;
-pub const CELL_SIZE: usize = 3;
-
-const COLORS: [u32; 5] = [0xFFD700, 0x00FF00, 0x0000FF, 0xFF4500, 0xFF1493];  // Amarillo, Verde, Azul, Naranja, Rosa
+const COLORS: [u32; 5] = [0xffd6ff, 0xe7c6ff, 0xc8b6ff, 0xb8c0ff, 0xbbd0ff];
 const BACKGROUND: u32 = 0x000000;
+
+type PatternFunction = dyn Fn(&mut Game, usize, usize);
 
 pub struct Game {
     grid: Vec<Vec<bool>>,
     pub buffer: Vec<u32>,
     generation: usize,
     paused: bool,
+    tick_rate: std::time::Duration,
+    last_update: std::time::Instant,
 }
 
 impl Game {
@@ -21,36 +23,73 @@ impl Game {
             buffer: vec![BACKGROUND; WIDTH * HEIGHT * CELL_SIZE * CELL_SIZE],
             generation: 0,
             paused: false,
+            tick_rate: std::time::Duration::from_millis(70),
+            last_update: std::time::Instant::now(),
         };
         game.initialize_grid();
         game
     }
 
-    fn initialize_grid(&mut self) {
-        let center_x = WIDTH / 2;
-        let center_y = HEIGHT / 2;
-        let offset = 50;
+  fn initialize_grid(&mut self) {
+    let patterns: Vec<(&PatternFunction, (usize, usize))> = vec![
+        // Patrones centrales
+        (&Self::flower, (WIDTH / 2, HEIGHT / 2)),
+        (&Self::pulsar, (WIDTH / 2, HEIGHT / 2 - 20)),
+        (&Self::pulsar, (WIDTH / 2, HEIGHT / 2 + 20)),
+        (&Self::pentadecathlon, (WIDTH / 2 - 20, HEIGHT / 2)),
+        (&Self::pentadecathlon, (WIDTH / 2 + 20, HEIGHT / 2)),
 
-        let patterns: Vec<(&dyn Fn(&mut Game, usize, usize), (usize, usize))> = vec![
-            (&Game::flower, (center_x, center_y)),
-            (&Game::flower, (center_x - offset, center_y - offset)),
-            (&Game::flower, (center_x + offset, center_y - offset)),
-            (&Game::flower, (center_x - offset, center_y + offset)),
-            (&Game::flower, (center_x + offset, center_y + offset)),
-            (&Game::pulsar, (center_x, center_y - offset * 2)),
-            (&Game::pulsar, (center_x, center_y + offset * 2)),
-            (&Game::pentadecathlon, (center_x - offset * 2, center_y)),
-            (&Game::pentadecathlon, (center_x + offset * 2, center_y)),
-            (&Game::glider, (center_x - offset * 3, center_y - offset * 3)),
-            (&Game::glider, (center_x + offset * 3, center_y - offset * 3)),
-            (&Game::glider, (center_x - offset * 3, center_y + offset * 3)),
-            (&Game::glider, (center_x + offset * 3, center_y + offset * 3)),
-        ];
+        // Patrones en las esquinas
+        (&Self::glider, (5, 5)),
+        (&Self::glider, (WIDTH - 10, 5)),
+        (&Self::glider, (5, HEIGHT - 10)),
+        (&Self::glider, (WIDTH - 10, HEIGHT - 10)),
 
-        for &(pattern_func, (x, y)) in &patterns {
-            pattern_func(self, x, y);
-        }
+        // Patrones en los bordes
+        (&Self::blinker, (WIDTH / 4, 5)),
+        (&Self::blinker, (3 * WIDTH / 4, HEIGHT - 5)),
+        (&Self::block, (5, HEIGHT / 2)),
+        (&Self::block, (WIDTH - 5, HEIGHT / 2)),
+
+        // Patrones dispersos
+        (&Self::beehive, (WIDTH / 3, HEIGHT / 3)),
+        (&Self::beehive, (2 * WIDTH / 3, 2 * HEIGHT / 3)),
+        (&Self::loaf, (WIDTH / 4, 3 * HEIGHT / 4)),
+        (&Self::loaf, (3 * WIDTH / 4, HEIGHT / 4)),
+
+        // Nuevos patrones
+        (&Self::boat, (WIDTH / 5, HEIGHT / 5)),
+        (&Self::tub, (4 * WIDTH / 5, 4 * HEIGHT / 5)),
+        (&Self::toad, (WIDTH / 6, HEIGHT / 2)),
+        (&Self::beacon, (5 * WIDTH / 6, HEIGHT / 2)),
+        (&Self::lightweight_spaceship, (WIDTH / 2, HEIGHT / 6)),
+        (&Self::middleweight_spaceship, (WIDTH / 2, 5 * HEIGHT / 6)),
+        (&Self::heavyweight_spaceship, (WIDTH / 3, HEIGHT / 2)),
+
+        // Formas especiales
+        (&Self::heart, (WIDTH / 4, HEIGHT / 4)),
+        (&Self::star, (3 * WIDTH / 4, 3 * HEIGHT / 4)),
+
+        // Más naves espaciales para movimiento
+        (&Self::glider, (WIDTH / 3, HEIGHT / 4)),
+        (&Self::glider, (2 * WIDTH / 3, 3 * HEIGHT / 4)),
+        (&Self::lightweight_spaceship, (WIDTH / 4, 2 * HEIGHT / 3)),
+        (&Self::middleweight_spaceship, (3 * WIDTH / 4, HEIGHT / 3)),
+
+        // Patrones estáticos adicionales
+        (&Self::block, (WIDTH / 8, HEIGHT / 8)),
+        (&Self::block, (7 * WIDTH / 8, 7 * HEIGHT / 8)),
+        (&Self::beehive, (3 * WIDTH / 4, HEIGHT / 8)),
+        (&Self::beehive, (WIDTH / 8, 3 * HEIGHT / 4)),
+        (&Self::loaf, (5 * WIDTH / 6, HEIGHT / 6)),
+        (&Self::loaf, (WIDTH / 6, 5 * HEIGHT / 6)),
+    ];
+
+    for (pattern_func, (x, y)) in patterns {
+        pattern_func(self, x, y);
     }
+}
+
 
     fn flower(&mut self, x: usize, y: usize) {
         let pattern = [
@@ -58,11 +97,7 @@ impl Game {
             (3,1), (3,3), (4,0), (4,4),
             (1,2), (2,1), (2,3), (3,2),
         ];
-        for &(dx, dy) in &pattern {
-            let nx = (x + dx) % WIDTH;
-            let ny = (y + dy) % HEIGHT;
-            self.grid[ny][nx] = true;
-        }
+        self.set_cells(x, y, &pattern);
     }
 
     fn glider(&mut self, x: usize, y: usize) {
@@ -73,11 +108,7 @@ impl Game {
             (1, 2),
             (2, 2),
         ];
-        for &(dx, dy) in &pattern {
-            let nx = (x + dx) % WIDTH;
-            let ny = (y + dy) % HEIGHT;
-            self.grid[ny][nx] = true;
-        }
+        self.set_cells(x, y, &pattern);
     }
 
     fn pulsar(&mut self, x: usize, y: usize) {
@@ -93,11 +124,7 @@ impl Game {
             (0,10), (5,10), (7,10), (12,10),
             (2,12), (3,12), (4,12), (8,12), (9,12), (10,12),
         ];
-        for &(dx, dy) in &pattern {
-            let nx = (x + dx) % WIDTH;
-            let ny = (y + dy) % HEIGHT;
-            self.grid[ny][nx] = true;
-        }
+        self.set_cells(x, y, &pattern);
     }
 
     fn pentadecathlon(&mut self, x: usize, y: usize) {
@@ -106,7 +133,31 @@ impl Game {
             (1,0), (1,9),
             (2,0), (2,1), (2,2), (2,3), (2,4), (2,5), (2,6), (2,7), (2,8), (2,9)
         ];
-        for &(dx, dy) in &pattern {
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn blinker(&mut self, x: usize, y: usize) {
+        let pattern = [(0, 0), (1, 0), (2, 0)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn block(&mut self, x: usize, y: usize) {
+        let pattern = [(0, 0), (0, 1), (1, 0), (1, 1)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn beehive(&mut self, x: usize, y: usize) {
+        let pattern = [(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (2, 2)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn loaf(&mut self, x: usize, y: usize) {
+        let pattern = [(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn set_cells(&mut self, x: usize, y: usize, pattern: &[(usize, usize)]) {
+        for &(dx, dy) in pattern {
             let nx = (x + dx) % WIDTH;
             let ny = (y + dy) % HEIGHT;
             self.grid[ny][nx] = true;
@@ -114,7 +165,7 @@ impl Game {
     }
 
     pub fn update(&mut self) {
-        if self.paused {
+        if self.paused || self.last_update.elapsed() < self.tick_rate {
             return;
         }
 
@@ -133,6 +184,7 @@ impl Game {
 
         self.grid = new_grid;
         self.generation += 1;
+        self.last_update = std::time::Instant::now();
     }
 
     pub fn render(&mut self) {
@@ -144,12 +196,18 @@ impl Game {
                     BACKGROUND
                 };
 
-                for dy in 0..CELL_SIZE {
-                    for dx in 0..CELL_SIZE {
-                        let index = (y * CELL_SIZE + dy) * WIDTH * CELL_SIZE + (x * CELL_SIZE + dx);
-                        self.buffer[index] = color;
-                    }
-                }
+                self.draw_cell(x, y, color);
+            }
+        }
+    }
+
+    fn draw_cell(&mut self, x: usize, y: usize, color: u32) {
+        for dy in 0..CELL_SIZE {
+            for dx in 0..CELL_SIZE {
+                let px = x * CELL_SIZE + dx;
+                let py = y * CELL_SIZE + dy;
+                let index = py * WIDTH * CELL_SIZE + px;
+                self.buffer[index] = color;
             }
         }
     }
@@ -175,12 +233,6 @@ impl Game {
         self.paused = !self.paused;
     }
 
-    pub fn add_cell(&mut self, x: usize, y: usize) {
-        if x < WIDTH && y < HEIGHT {
-            self.grid[y][x] = true;
-        }
-    }
-
     pub fn clear(&mut self) {
         self.grid = vec![vec![false; WIDTH]; HEIGHT];
         self.generation = 0;
@@ -193,5 +245,61 @@ impl Game {
     pub fn get_live_cells(&self) -> usize {
         self.grid.iter().flatten().filter(|&&cell| cell).count()
     }
-}
 
+    fn boat(&mut self, x: usize, y: usize) {
+        let pattern = [(0, 0), (1, 0), (0, 1), (2, 1), (1, 2)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn tub(&mut self, x: usize, y: usize) {
+        let pattern = [(1, 0), (0, 1), (2, 1), (1, 2)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn toad(&mut self, x: usize, y: usize) {
+        let pattern = [(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn beacon(&mut self, x: usize, y: usize) {
+        let pattern = [(0, 0), (1, 0), (0, 1), (3, 2), (2, 3), (3, 3)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn lightweight_spaceship(&mut self, x: usize, y: usize) {
+        let pattern = [(1, 0), (4, 0), (0, 1), (0, 2), (4, 2), (0, 3), (1, 3), (2, 3), (3, 3)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn middleweight_spaceship(&mut self, x: usize, y: usize) {
+        let pattern = [(2, 0), (4, 0), (1, 1), (5, 1), (0, 2), (0, 3), (5, 3), (0, 4), (1, 4), (2, 4), (3, 4), (4, 4)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn heavyweight_spaceship(&mut self, x: usize, y: usize) {
+        let pattern = [(2, 0), (3, 0), (5, 0), (6, 0), (1, 1), (6, 1), (0, 2), (0, 3), (6, 3), (0, 4), (1, 4), (2, 4), (3, 4), (4, 4), (5, 4)];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn heart(&mut self, x: usize, y: usize) {
+        let pattern = [
+            (1, 0), (3, 0),
+            (0, 1), (1, 1), (2, 1), (3, 1), (4, 1),
+            (0, 2), (1, 2), (2, 2), (3, 2), (4, 2),
+            (1, 3), (2, 3), (3, 3),
+            (2, 4)
+        ];
+        self.set_cells(x, y, &pattern);
+    }
+
+    fn star(&mut self, x: usize, y: usize) {
+        let pattern = [
+            (2, 0),
+            (1, 1), (2, 1), (3, 1),
+            (0, 2), (1, 2), (2, 2), (3, 2), (4, 2),
+            (1, 3), (2, 3), (3, 3),
+            (2, 4)
+        ];
+        self.set_cells(x, y, &pattern);
+    }
+}

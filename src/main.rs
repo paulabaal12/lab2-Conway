@@ -1,7 +1,7 @@
 mod game;
 
 use game::{Game, WIDTH, HEIGHT, CELL_SIZE};
-use minifb::{Window, WindowOptions, Key, MouseMode};
+use minifb::{Window, WindowOptions, Key};
 
 fn main() {
     let mut game = Game::new();
@@ -14,7 +14,7 @@ fn main() {
         panic!("{}", e);
     });
 
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    window.limit_update_rate(Some(std::time::Duration::from_millis(50)));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if window.is_key_pressed(Key::Space, minifb::KeyRepeat::No) {
@@ -29,18 +29,14 @@ fn main() {
             game = Game::new();
         }
 
-        if let Some((x, y)) = window.get_mouse_pos(MouseMode::Discard) {
-            let cell_x = (x as usize) / CELL_SIZE;
-            let cell_y = (y as usize) / CELL_SIZE;
-            if window.get_mouse_down(minifb::MouseButton::Left) {
-                game.add_cell(cell_x, cell_y);
-            }
-        }
-
         game.update();
         game.render();
 
-        let title = format!("Conway's Game of Life - Gen: {} | Cells: {}", game.get_generation(), game.get_live_cells());
+        let title = format!(
+            "Conway's Game of Life - Gen: {} | Cells: {}",
+            game.get_generation(),
+            game.get_live_cells()
+        );
         window.set_title(&title);
 
         window.update_with_buffer(&game.buffer, WIDTH * CELL_SIZE, HEIGHT * CELL_SIZE).unwrap();
