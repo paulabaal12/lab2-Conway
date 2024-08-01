@@ -14,7 +14,7 @@ fn main() {
         panic!("{}", e);
     });
 
-    window.limit_update_rate(Some(std::time::Duration::from_millis(50)));
+    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if window.is_key_pressed(Key::Space, minifb::KeyRepeat::No) {
@@ -39,10 +39,10 @@ fn main() {
 
         game.update();
         game.render();
-        
+
         let title = format!("Conway's Game of Life - Gen: {} | Cells: {}", game.get_generation(), game.get_live_cells());
         window.set_title(&title);
-        
+
         window.update_with_buffer(&game.buffer, WIDTH * CELL_SIZE, HEIGHT * CELL_SIZE).unwrap();
     }
 }
