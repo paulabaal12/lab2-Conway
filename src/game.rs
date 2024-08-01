@@ -1,33 +1,25 @@
 use rand::Rng;
 
-pub const WIDTH: usize = 200;
-pub const HEIGHT: usize = 200;
-pub const CELL_SIZE: usize = 4;
+pub const WIDTH: usize = 300;
+pub const HEIGHT: usize = 300;
+pub const CELL_SIZE: usize = 3;
 
-const COLORS: [(u8, u8, u8); 11] = [
-    (255, 0, 0),    // Rojo
-    (0, 255, 0),    // Verde
-    (0, 0, 255),    // Azul
-    (255, 255, 0),  // Amarillo
-    (255, 0, 255),  // Magenta
-    (0, 255, 255),  // Cian
-    (255, 128, 0),  // Naranja
-    (128, 0, 255),  // Púrpura
-    (0, 255, 128),  // Verde lima
-    (255, 128, 128),// Rosa
-    (128, 128, 255) // Lavanda
-];
+const LAVENDER: u32 = 0x9370DB;
 
 pub struct Game {
-    grid: Vec<Vec<u8>>,
+    grid: Vec<Vec<bool>>,
     pub buffer: Vec<u32>,
+    generation: usize,
+    paused: bool,
 }
 
 impl Game {
     pub fn new() -> Self {
         let mut game = Self {
-            grid: vec![vec![0; WIDTH]; HEIGHT],
+            grid: vec![vec![false; WIDTH]; HEIGHT],
             buffer: vec![0; WIDTH * HEIGHT * CELL_SIZE * CELL_SIZE],
+            generation: 0,
+            paused: false,
         };
         game.initialize_grid();
         game
@@ -36,48 +28,45 @@ impl Game {
     fn initialize_grid(&mut self) {
         let mut rng = rand::thread_rng();
         
-        for _ in 0..20 {
+        for _ in 0..15 {
             let x = rng.gen_range(0..WIDTH);
             let y = rng.gen_range(0..HEIGHT);
-            match rng.gen_range(0..7) {
-                0 => self.glider(x, y),
-                1 => self.blinker(x, y),
-                2 => self.beacon(x, y),
-                3 => self.pulsar(x, y),
-                4 => self.lightweight_spaceship(x, y),
-                5 => self.beehive(x, y),
-                _ => self.random_cells(x, y),
+            match rng.gen_range(0..5) {
+                0 => self.gosper_glider_gun(x, y),
+                1 => self.pulsar(x, y),
+                2 => self.pentadecathlon(x, y),
+                3 => self.r_pentomino(x, y),
+                _ => self.random_pattern(x, y),
             }
         }
     }
 
     pub fn update(&mut self) {
-        let mut new_grid = vec![vec![0; WIDTH]; HEIGHT];
+        if self.paused {
+            return;
+        }
+        
+        let mut new_grid = vec![vec![false; WIDTH]; HEIGHT];
         
         for y in 0..HEIGHT {
             for x in 0..WIDTH {
                 let live_neighbors = self.count_live_neighbors(x, y);
                 new_grid[y][x] = match (self.grid[y][x], live_neighbors) {
-                    (0, 3) => 1,
-                    (age, 2) | (age, 3) if age > 0 => age.saturating_add(1),
-                    _ => 0,
+                    (true, 2) | (true, 3) => true,
+                    (false, 3) => true,
+                    _ => false,
                 };
             }
         }
         
         self.grid = new_grid;
+        self.generation += 1;
     }
 
     pub fn render(&mut self) {
         for y in 0..HEIGHT {
             for x in 0..WIDTH {
-                let color = if self.grid[y][x] > 0 {
-                    let color_index = (self.grid[y][x] as usize - 1) % COLORS.len();
-                    let (r, g, b) = COLORS[color_index];
-                    (r as u32) << 16 | (g as u32) << 8 | (b as u32)
-                } else {
-                    0
-                };
+                let color = if self.grid[y][x] { LAVENDER } else { 0 };
                 
                 for dy in 0..CELL_SIZE {
                     for dx in 0..CELL_SIZE {
@@ -98,7 +87,7 @@ impl Game {
                 }
                 let nx = (x as i32 + dx + WIDTH as i32) % WIDTH as i32;
                 let ny = (y as i32 + dy + HEIGHT as i32) % HEIGHT as i32;
-                if self.grid[ny as usize][nx as usize] > 0 {
+                if self.grid[ny as usize][nx as usize] {
                     count += 1;
                 }
             }
@@ -106,31 +95,17 @@ impl Game {
         count
     }
 
-    // Patrones
-    fn glider(&mut self, x: usize, y: usize) {
-        let pattern = [(1,0), (2,1), (0,2), (1,2), (2,2)];
+    fn gosper_glider_gun(&mut self, x: usize, y: usize) {
+        let pattern = [
+            (1,5), (1,6), (2,5), (2,6), (11,5), (11,6), (11,7), (12,4), (12,8), (13,3), (13,9),
+            (14,3), (14,9), (15,6), (16,4), (16,8), (17,5), (17,6), (17,7), (18,6), (21,3), (21,4),
+            (21,5), (22,3), (22,4), (22,5), (23,2), (23,6), (25,1), (25,2), (25,6), (25,7), (35,3),
+            (35,4), (36,3), (36,4)
+        ];
         for &(dx, dy) in &pattern {
             let nx = (x + dx) % WIDTH;
             let ny = (y + dy) % HEIGHT;
-            self.grid[ny][nx] = 1;
-        }
-    }
-
-    fn blinker(&mut self, x: usize, y: usize) {
-        let pattern = [(0,0), (1,0), (2,0)];
-        for &(dx, dy) in &pattern {
-            let nx = (x + dx) % WIDTH;
-            let ny = (y + dy) % HEIGHT;
-            self.grid[ny][nx] = 1;
-        }
-    }
-
-    fn beacon(&mut self, x: usize, y: usize) {
-        let pattern = [(0,0), (1,0), (0,1), (3,2), (2,3), (3,3)];
-        for &(dx, dy) in &pattern {
-            let nx = (x + dx) % WIDTH;
-            let ny = (y + dy) % HEIGHT;
-            self.grid[ny][nx] = 1;
+            self.grid[ny][nx] = true;
         }
     }
 
@@ -150,38 +125,65 @@ impl Game {
         for &(dx, dy) in &pattern {
             let nx = (x + dx) % WIDTH;
             let ny = (y + dy) % HEIGHT;
-            self.grid[ny][nx] = 1;
+            self.grid[ny][nx] = true;
         }
     }
 
-    fn lightweight_spaceship(&mut self, x: usize, y: usize) {
-        let pattern = [(1,0), (4,0), (0,1), (0,2), (4,2), (0,3), (1,3), (2,3), (3,3)];
+    fn pentadecathlon(&mut self, x: usize, y: usize) {
+        let pattern = [
+            (0,0), (0,1), (0,2), (0,3), (0,4), (0,5), (0,6), (0,7), (0,8), (0,9),
+            (1,0), (1,9),
+            (2,0), (2,1), (2,2), (2,3), (2,4), (2,5), (2,6), (2,7), (2,8), (2,9)
+        ];
         for &(dx, dy) in &pattern {
             let nx = (x + dx) % WIDTH;
             let ny = (y + dy) % HEIGHT;
-            self.grid[ny][nx] = 1;
+            self.grid[ny][nx] = true;
         }
     }
 
-    fn beehive(&mut self, x: usize, y: usize) {
-        let pattern = [(1,0), (2,0), (0,1), (3,1), (1,2), (2,2)];
+    fn r_pentomino(&mut self, x: usize, y: usize) {
+        let pattern = [(1,0), (2,0), (0,1), (1,1), (1,2)];
         for &(dx, dy) in &pattern {
             let nx = (x + dx) % WIDTH;
             let ny = (y + dy) % HEIGHT;
-            self.grid[ny][nx] = 1;
+            self.grid[ny][nx] = true;
         }
     }
 
-    fn random_cells(&mut self, x: usize, y: usize) {
+    fn random_pattern(&mut self, x: usize, y: usize) {
         let mut rng = rand::thread_rng();
-        for dy in 0..5 {
-            for dx in 0..5 {
-                if rng.gen_bool(0.4) {
+        for dy in 0..10 {
+            for dx in 0..10 {
+                if rng.gen_bool(0.3) {
                     let nx = (x + dx) % WIDTH;
                     let ny = (y + dy) % HEIGHT;
-                    self.grid[ny][nx] = 1;
+                    self.grid[ny][nx] = true;
                 }
             }
         }
+    }
+
+    pub fn toggle_pause(&mut self) {
+        self.paused = !self.paused;
+    }
+
+    pub fn add_cell(&mut self, x: usize, y: usize) {
+        if x < WIDTH && y < HEIGHT {
+            self.grid[y][x] = true;
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.grid = vec![vec![false; WIDTH]; HEIGHT];
+        self.generation = 0;
+    }
+
+    pub fn get_generation(&self) -> usize {
+        self.generation
+    }
+
+    pub fn get_live_cells(&self) -> usize {
+        self.grid.iter().flatten().filter(|&&cell| cell).count()
     }
 }
